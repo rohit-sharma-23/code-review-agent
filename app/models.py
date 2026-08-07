@@ -1,7 +1,15 @@
 """Data models and schemas for the application."""
 
-from pydantic import BaseModel
-from typing import Optional, List
+from typing import List, Optional, Literal
+from pydantic import BaseModel, Field
+
+
+class CodeChunk(BaseModel):
+    """Schema representing an extracted code chunk."""
+    file_path: str
+    content: str
+    chunk_type: Literal["function", "async_function", "class"]
+    embedding: Optional[List[float]] = None
 
 
 class CodeReviewRequest(BaseModel):
@@ -12,3 +20,4 @@ class CodeReviewRequest(BaseModel):
 class CodeReviewResponse(BaseModel):
     summary: str
     issues: List[dict] = []
+
