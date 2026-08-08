@@ -188,12 +188,19 @@ class GitHubService:
             }
 
         if line not in added_lines:
-            return {
-                "status": "error",
-                "error": f"Line {line} in file '{file_path}' is not an added or modified line in PR #{pr_number}. Review comments can only be posted on added or modified lines.",
-                "code": "INVALID_COMMENT_POSITION",
-                "valid_added_lines": sorted(list(added_lines))
-            }
+            # Attempt to auto-adjust to closest valid added line within +/- 2 lines
+            closest_line = min(added_lines, key=lambda l: abs(l - line))
+            if abs(closest_line - line) <= 2:
+                logger.info(f"Auto-adjusted comment line from {line} to nearest added line {closest_line} in '{file_path}'.")
+                line = closest_line
+            else:
+                return {
+                    "status": "error",
+                    "error": f"Line {line} in file '{file_path}' is not an added or modified line in PR #{pr_number}. Review comments can only be posted on added or modified lines.",
+                    "code": "INVALID_COMMENT_POSITION",
+                    "valid_added_lines": sorted(list(added_lines))
+                }
+
 
         # 3. Post comment via GitHub PR Review Comments API
         async with httpx.AsyncClient() as client:
