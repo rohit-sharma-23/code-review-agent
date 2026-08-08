@@ -11,8 +11,10 @@ import logging
 import os
 import uuid
 from typing import Any, Dict, Optional
+from urllib.parse import parse_qs, unquote
 
 import asyncpg
+
 from dotenv import load_dotenv
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
@@ -164,6 +166,17 @@ async def handle_github_webhook(
     # 1. Read raw request payload bytes
     payload_bytes = await request.body()
 
+    if not payload_bytes or not payload_bytes.strip():
+        logger.warning(f"[Delivery {delivery_id}] REJECTED: Empty request body.")
+        return JSONResponse(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            content={
+                "status": "error",
+                "error": "Payload body is empty.",
+                "delivery_id": delivery_id
+            }
+        )
+
     # 2. HMAC-SHA256 Signature Verification
     if not verify_github_signature(payload_bytes, x_hub_signature_256, webhook_secret):
         logger.warning(
@@ -178,9 +191,15 @@ async def handle_github_webhook(
             }
         )
 
-    # 3. Parse JSON Payload
+    # 3. Parse JSON Payload (supports application/json and application/x-www-form-urlencoded)
     try:
-        payload = json.loads(payload_bytes.decode("utf-8"))
+        payload_text = payload_bytes.decode("utf-8").strip()
+        if payload_text.startswith("payload="):
+            parsed_form = parse_qs(payload_text)
+            raw_json_str = parsed_form.get("payload", [""])[0]
+            payload = json.loads(raw_json_str)
+        else:
+            payload = json.loads(payload_text)
     except Exception as e:
         logger.error(f"[Delivery {delivery_id}] Malformed JSON payload: {e}")
         return JSONResponse(
@@ -194,6 +213,18 @@ async def handle_github_webhook(
 
     # 4. Filter GitHub Event Type
     event_type = x_github_event or "pull_request"
+
+    # Handle GitHub Webhook Ping event
+    if event_type == "ping":
+        zen = payload.get("zen", "No zen provided")
+        logger.info(f"[Delivery {delivery_id}] Handled GitHub Ping event. Zen: '{zen}'")
+        return {
+            "status": "pong",
+            "message": "GitHub Webhook Ping received successfully.",
+            "zen": zen,
+            "delivery_id": delivery_id
+        }
+
     if event_type != "pull_request":
         logger.info(f"[Delivery {delivery_id}] Ignored event type: '{event_type}'")
         return {
@@ -203,13 +234,14 @@ async def handle_github_webhook(
         }
 
     action = payload.get("action")
-    if action not in ["opened", "synchronize"]:
+    if action not in ["opened", "synchronize", "reopened"]:
         logger.info(f"[Delivery {delivery_id}] Ignored PR action: '{action}'")
         return {
             "status": "ignored",
             "reason": f"PR action '{action}' is not configured for auto-review.",
             "delivery_id": delivery_id
         }
+
 
     # 5. Extract Details
     repo_full_name = payload.get("repository", {}).get("full_name")

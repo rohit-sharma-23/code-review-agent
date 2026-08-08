@@ -163,9 +163,37 @@ def run_webhook_tests():
     passed_tests += 1
     logger.info("PASSED [TEST 6] (Closed action correctly ignored)")
 
+    # ------------------------------------------------------------------
+    # Test 7: POST /webhook (Form-encoded payload: application/x-www-form-urlencoded)
+    # ------------------------------------------------------------------
+    logger.info("\n--- [TEST 7] POST /webhook (Form-encoded payload) ---")
+    from urllib.parse import quote
+    valid_payload_dict["action"] = "reopened"
+    raw_json_str = json.dumps(valid_payload_dict)
+    form_encoded_str = f"payload={quote(raw_json_str)}"
+    payload7_bytes = form_encoded_str.encode("utf-8")
+    sig7 = create_signature(payload7_bytes, secret)
+
+    res7 = client.post(
+        "/webhook",
+        content=payload7_bytes,
+        headers={
+            "Content-Type": "application/x-www-form-urlencoded",
+            "X-Hub-Signature-256": sig7,
+            "X-GitHub-Delivery": "test-delivery-107",
+            "X-GitHub-Event": "pull_request"
+        }
+    )
+    logger.info(f"Response status: {res7.status_code}, body: {res7.json()}")
+    assert res7.status_code == 200, "Form-encoded PR webhook should return 200."
+    assert res7.json().get("status") == "accepted", "Status should be accepted."
+    passed_tests += 1
+    logger.info("PASSED [TEST 7] (Form-encoded payload successfully parsed and accepted)")
+
     logger.info("\n======================================================")
-    logger.info(f"       SUMMARY: {passed_tests}/{total_tests} TESTS PASSED SUCCESSFULLY       ")
+    logger.info(f"       SUMMARY: {passed_tests}/7 TESTS PASSED SUCCESSFULLY       ")
     logger.info("======================================================")
+
 
 
 if __name__ == "__main__":
