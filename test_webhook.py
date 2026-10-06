@@ -20,6 +20,8 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.db import db_manager
 
+def my_test_function():
+    return "hello"
 
 def create_signature(payload_bytes: bytes, secret: str) -> str:
     hash_val = hmac.new(secret.encode("utf-8"), payload_bytes, hashlib.sha256).hexdigest()
